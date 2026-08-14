@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Product Cost Comparison{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+</div>
+
+<div class="dashboard-cards">
+    <div class="card">
+        <div class="card-title">Base Price Status</div>
+        <div class="card-value {% if base_exists %}status-ok{% else %}status-warn{% endif %}">
+            {% if base_exists %}{{ base_name }}{% else %}Not Set{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">Total Versions</div>
+        <div class="card-value">{{ total_versions }}</div>
+    </div>
+    <div class="card">
+        <div class="card-title">Latest Version</div>
+        <div class="card-value">
+            {% if latest_version %}
+                {{ latest_version.name }}<br>
+                <small>{{ latest_version.version_date }}</small>
+            {% else %}
+                None
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-title">Products in Latest Version</div>
+        <div class="card-value">{{ latest_product_count }}</div>
+    </div>
+</div>
+
+<div class="action-buttons">
+    <a href="{{ url_for('upload_base') }}" class="btn btn-primary">Upload Base Price</a>
+    <a href="{{ url_for('upload_version') }}" class="btn btn-primary">Upload New Version</a>
+    <a href="{{ url_for('versions') }}" class="btn btn-secondary">View Product Cost Versions</a>
+    <a href="{{ url_for('versions') }}" class="btn btn-secondary">Compare Versions</a>
+</div>
+{% endblock %}

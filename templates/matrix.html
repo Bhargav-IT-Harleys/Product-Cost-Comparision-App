@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}{{ version.name }} - Matrix{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ version.name }} - Location-wise Cost Matrix</h1>
+    <p class="subtitle">{{ version.version_date }} &middot; {% if version.is_base %}Base Price{% else %}Version{% endif %}</p>
+</div>
+
+<div class="alert alert-info" style="margin-bottom: 1rem;">
+    AVG DIFF shown as difference from the product's average cost across locations within this version.
+</div>
+
+<div class="table-responsive matrix-view">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Product Name</th>
+                <th class="col-category">Category</th>
+                <th class="col-unit">Unit</th>
+                <th>Average</th>
+                {% for loc in locations %}
+                <th>{{ loc }}</th>
+                <th>{{ loc }} AVG DIFF</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in matrix_rows %}
+            <tr>
+                <td>{{ row.product_name }}</td>
+                <td class="col-category">{{ row.product_category or '-' }}</td>
+                <td class="col-unit">{{ row.unit or '-' }}</td>
+                <td>{{ "%.2f" % row.average if row.average is not none else '-' }}</td>
+                {% for loc in locations %}
+                <td>{{ row.costs.get(loc) if row.costs.get(loc) is not none else '-' }}</td>
+                <td>
+                    {% if row.deviations.get(loc) is not none %}
+                        {{ "%.2f" % row.deviations.get(loc) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="{{ 3 + 1 + (locations|length * 2) }}" class="text-center">No products found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="action-buttons" style="margin-top: 1.5rem;">
+    <a href="{{ url_for('versions') }}" class="btn btn-secondary">Back to Versions</a>
+    <a href="{{ url_for('version_detail', version_id=version.id) }}" class="btn btn-primary">Compare</a>
+</div>
+{% endblock %}

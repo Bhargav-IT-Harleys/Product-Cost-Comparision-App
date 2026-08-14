@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Version Details{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Version Details</h1>
+</div>
+
+<div class="version-info">
+    <p><strong>Name:</strong> {{ current_version.name }}</p>
+    <p><strong>Date:</strong> {{ current_version.version_date }}</p>
+    <p><strong>Type:</strong> {% if current_version.is_base %}Base Price{% else %}Version{% endif %}</p>
+</div>
+
+<div class="compare-section">
+    <div class="form-group">
+        <label for="compare_version">Compare With</label>
+        <select id="compare_version">
+            <option value="">-- Select Version --</option>
+            {% if not current_version.is_base %}
+            <option value="base">Base Price</option>
+            {% endif %}
+            {% for v in other_versions %}
+                {% if not v.is_base or current_version.is_base %}
+                <option value="{{ v.id }}">{{ v.name }} ({{ v.version_date }}){% if v.is_base %} [Base]{% endif %}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+<div id="summary-cards" class="summary-cards" style="display:none;">
+    <div class="card summary-clickable" data-filter="total"><div class="card-title">Total Compared</div><div class="card-value" id="sum-total">-</div></div>
+    <div class="card summary-clickable" data-filter="increased"><div class="card-title">Increased</div><div class="card-value" id="sum-increased">-</div></div>
+    <div class="card summary-clickable" data-filter="decreased"><div class="card-title">Decreased</div><div class="card-value" id="sum-decreased">-</div></div>
+    <div class="card summary-clickable" data-filter="unchanged"><div class="card-title">Unchanged</div><div class="card-value" id="sum-unchanged">-</div></div>
+    <div class="card summary-clickable" data-filter="missing"><div class="card-title">Missing</div><div class="card-value" id="sum-missing">-</div></div>
+    <div class="card summary-clickable" data-filter="increased_pct"><div class="card-title">Highest Increase %</div><div class="card-value" id="sum-hi">-</div></div>
+    <div class="card summary-clickable" data-filter="decreased_pct"><div class="card-title">Highest Decrease %</div><div class="card-value" id="sum-hd">-</div></div>
+    <div class="card summary-clickable" data-filter="avg_diff"><div class="card-title">Avg Diff</div><div class="card-value" id="sum-avg-diff">-</div></div>
+</div>
+<p class="hint-text" id="summary-hint" style="display:none;">Click a summary card to filter the table. Click again to clear.</p>
+
+<div class="filters" style="display:none;" id="filters">
+    <input type="text" id="search-input" placeholder="Search by product name...">
+    <select id="category-filter">
+        <option value="">All Categories</option>
+    </select>
+    <select id="location-filter">
+        <option value="">All Locations</option>
+        <option value="HYD">HYD</option>
+        <option value="BLR">BLR</option>
+        <option value="MUM">MUM</option>
+        <option value="PUNE">PUNE</option>
+        <option value="NCR">NCR</option>
+    </select>
+    <button type="button" id="download-report" class="btn btn-sm btn-secondary">Download Report</button>
+</div>
+
+<div class="table-responsive" id="results-container" style="display:none;">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th class="sortable-th" data-sort="product_name">Product Name <span class="sort-indicator"></span></th>
+                <th class="sortable-th col-category" data-sort="product_category">Category <span class="sort-indicator"></span></th>
+                <th class="sortable-th col-unit" data-sort="unit">Unit <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="location">Location <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="current_cost">Current Cost <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="compared_cost">Compared Cost <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="diff">Diff <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="diff_pct">Diff % <span class="sort-indicator"></span></th>
+            </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.currentVersionId = {{ current_version.id }};
+</script>
+<script src="{{ url_for('static', filename='js/comparison.js') }}"></script>
+{% endblock %}

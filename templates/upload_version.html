@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Upload New Version{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Upload New Version</h1>
+</div>
+
+{% if not preview %}
+<form method="post" enctype="multipart/form-data" class="form-card">
+    <div class="form-group">
+        <label for="version_name">Version Name</label>
+        <input type="text" id="version_name" name="version_name" required>
+    </div>
+    <div class="form-group">
+        <label for="version_date">Version Date</label>
+        <input type="date" id="version_date" name="version_date" required>
+    </div>
+    <div class="form-group">
+        <label for="file">Excel File (.xlsx)</label>
+        <input type="file" id="file" name="file" accept=".xlsx" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Preview</button>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+</form>
+{% else %}
+<div class="preview-section">
+    <h2>Preview: {{ version_name }} ({{ version_date }})</h2>
+    <p>Review the data below before saving.</p>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Product Name</th>
+                    <th>Category</th>
+                    <th>Unit</th>
+                    <th>Location</th>
+                    <th>Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rec in preview_records %}
+                <tr>
+                    <td>{{ rec.product_name }}</td>
+                    <td>{{ rec.product_category or '-' }}</td>
+                    <td>{{ rec.unit or '-' }}</td>
+                    <td>{{ rec.location }}</td>
+                    <td>{{ rec.cost if rec.cost is not none else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="form-actions">
+        <form method="post" action="{{ url_for('save_version') }}" class="inline">
+            <button type="submit" class="btn btn-success">Save Version</button>
+        </form>
+        <a href="{{ url_for('upload_version') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

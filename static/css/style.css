@@ -41,6 +41,80 @@ body {
     background: #34495e;
 }
 
+.nav-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-toggle {
+    background: #2980b9;
+    color: #fff;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: opacity 0.2s;
+}
+
+.dropdown-toggle:hover {
+    opacity: 0.9;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: #fff;
+    min-width: 160px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    border-radius: 4px;
+    z-index: 100;
+    margin-top: 0.25rem;
+}
+
+.dropdown-menu a {
+    display: block;
+    color: #2c3e50;
+    padding: 0.6rem 1rem;
+    text-decoration: none;
+    font-size: 0.95rem;
+    margin-left: 0;
+    border-radius: 0;
+}
+
+.dropdown-menu a:hover {
+    background: #f8f9fa;
+}
+
+.nav-dropdown:hover .dropdown-menu {
+    display: block;
+}
+
+.nav-username {
+    color: #ecf0f1;
+    margin-right: 0.5rem;
+    font-weight: 600;
+}
+
+.btn-nav {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.2s;
+    color: #fff;
+    background: #c0392b;
+}
+
+.btn-nav:hover {
+    opacity: 0.9;
+}
+
 @media (max-width: 768px) {
     .navbar {
         flex-direction: column;

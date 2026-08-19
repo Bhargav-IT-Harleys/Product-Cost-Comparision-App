@@ -11,9 +11,20 @@
         <div class="nav-brand">Product Cost Comparison</div>
         <div class="nav-links">
             <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-            <a href="{{ url_for('upload_base') }}" class="{% if request.endpoint == 'upload_base' %}active{% endif %}">Upload Base Price</a>
-            <a href="{{ url_for('upload_version') }}" class="{% if request.endpoint == 'upload_version' %}active{% endif %}">Upload New Version</a>
             <a href="{{ url_for('versions') }}" class="{% if request.endpoint == 'versions' %}active{% endif %}">Versions</a>
+            {% if session.get('user_id') %}
+            <a href="{{ url_for('upload_version') }}" class="{% if request.endpoint == 'upload_version' %}active{% endif %}">Upload Version</a>
+            <span class="nav-username">{{ session.get('username') }}</span>
+            <a href="{{ url_for('logout') }}" class="btn-nav">Logout</a>
+            {% else %}
+            <div class="nav-dropdown">
+                <button class="btn-nav dropdown-toggle" type="button">Sign up / Sign in</button>
+                <div class="dropdown-menu">
+                    <a href="{{ url_for('login') }}">Sign In</a>
+                    <a href="{{ url_for('register') }}">Sign Up</a>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </nav>
 

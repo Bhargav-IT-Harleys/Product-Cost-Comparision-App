@@ -3,21 +3,26 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class ProductCostVersion(Base):
     __tablename__ = "product_cost_versions"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     version_date = Column(String(50), nullable=False)
-    is_base = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     product_costs = relationship("ProductCost", back_populates="version", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("name", name="uq_version_name"),
-        Index("ix_version_is_base", "is_base"),
-        Index("ix_product_cost_version_base_unique", "is_base", unique=True, postgresql_where="is_base = 1"),
     )
 
 class ProductCost(Base):

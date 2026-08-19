@@ -9,12 +9,6 @@
 
 <div class="dashboard-cards">
     <div class="card">
-        <div class="card-title">Base Price Status</div>
-        <div class="card-value {% if base_exists %}status-ok{% else %}status-warn{% endif %}">
-            {% if base_exists %}{{ base_name }}{% else %}Not Set{% endif %}
-        </div>
-    </div>
-    <div class="card">
         <div class="card-title">Total Versions</div>
         <div class="card-value">{{ total_versions }}</div>
     </div>
@@ -36,8 +30,11 @@
 </div>
 
 <div class="action-buttons">
-    <a href="{{ url_for('upload_base') }}" class="btn btn-primary">Upload Base Price</a>
-    <a href="{{ url_for('upload_version') }}" class="btn btn-primary">Upload New Version</a>
+    {% if logged_in %}
+    <a href="{{ url_for('upload_version') }}" class="btn btn-primary">Upload Version</a>
+    {% else %}
+    <a href="{{ url_for('login') }}" class="btn btn-primary">Login to Upload</a>
+    {% endif %}
     <a href="{{ url_for('versions') }}" class="btn btn-secondary">View Product Cost Versions</a>
     <a href="{{ url_for('versions') }}" class="btn btn-secondary">Compare Versions</a>
 </div>

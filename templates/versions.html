@@ -13,7 +13,6 @@
             <tr>
                 <th>Version Name</th>
                 <th>Version Date</th>
-                <th>Type</th>
                 <th>Created At</th>
                 <th>Product Count</th>
                 <th>Actions</th>
@@ -22,30 +21,19 @@
         <tbody>
             {% for v in versions %}
             <tr>
-                <td>{{ v.name }}</td>
+                <td>{{ v.display_name }}</td>
                 <td>{{ v.version_date }}</td>
-                <td>
-                    {% if v.is_base %}
-                        <span class="badge badge-base">Base Price</span>
-                    {% else %}
-                        <span class="badge badge-version">Version</span>
-                    {% endif %}
-                </td>
                 <td>{{ v.created_at.strftime('%Y-%m-%d %H:%M') if v.created_at else '-' }}</td>
                 <td>{{ v.product_count }}</td>
                 <td>
-                    <a href="{{ url_for('version_matrix', version_id=v.id) }}" class="btn btn-sm btn-primary">View</a>
+                    <a href="{{ url_for('version_data', version_id=v.id) }}" class="btn btn-sm btn-primary">View Data</a>
+                    <a href="{{ url_for('version_matrix', version_id=v.id) }}" class="btn btn-sm btn-secondary">Deviations</a>
                     <a href="{{ url_for('version_detail', version_id=v.id) }}" class="btn btn-sm btn-secondary">Compare</a>
-                    {% if not v.is_base %}
-                        <form method="post" action="{{ url_for('delete_version', version_id=v.id) }}" class="inline-form" onsubmit="return confirm('Delete this version? This action cannot be undone.');">
-                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-                        </form>
-                    {% endif %}
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="6" class="text-center">No versions found.</td>
+                <td colspan="5" class="text-center">No versions found.</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -10,7 +10,6 @@
 <div class="version-info">
     <p><strong>Name:</strong> {{ current_version.name }}</p>
     <p><strong>Date:</strong> {{ current_version.version_date }}</p>
-    <p><strong>Type:</strong> {% if current_version.is_base %}Base Price{% else %}Version{% endif %}</p>
 </div>
 
 <div class="compare-section">
@@ -18,13 +17,8 @@
         <label for="compare_version">Compare With</label>
         <select id="compare_version">
             <option value="">-- Select Version --</option>
-            {% if not current_version.is_base %}
-            <option value="base">Base Price</option>
-            {% endif %}
             {% for v in other_versions %}
-                {% if not v.is_base or current_version.is_base %}
-                <option value="{{ v.id }}">{{ v.name }} ({{ v.version_date }}){% if v.is_base %} [Base]{% endif %}</option>
-                {% endif %}
+                <option value="{{ v.id }}">{{ v.name }} ({{ v.version_date }})</option>
             {% endfor %}
         </select>
     </div>
@@ -74,6 +68,30 @@
         </thead>
         <tbody id="results-body"></tbody>
     </table>
+</div>
+
+<div id="top20-section" style="display:none; margin-top: 2rem;">
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>Top 20 Highest Differences</h2>
+        <button type="button" id="toggle-top20" class="btn btn-sm btn-secondary">Hide</button>
+    </div>
+    <div class="table-responsive">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>City</th>
+                    <th>Category</th>
+                    <th>Product Name</th>
+                    <th>Unit</th>
+                    <th>Current Cost</th>
+                    <th>Compared Cost</th>
+                    <th>Diff</th>
+                    <th>Diff %</th>
+                </tr>
+            </thead>
+            <tbody id="top20-body"></tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}
 

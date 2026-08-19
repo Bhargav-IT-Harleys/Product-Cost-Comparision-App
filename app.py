@@ -2,14 +2,17 @@ import os
 import json
 import uuid
 import tempfile
+import re
 from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, abort
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 from database import SessionLocal, engine, Base
-from models import ProductCostVersion, ProductCost
-from sqlalchemy import func
+from models import ProductCostVersion, ProductCost, User
+from sqlalchemy import func, text
 
 load_dotenv()
 
@@ -19,6 +22,47 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
 
 with app.app_context():
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        conn.execute(text("DROP INDEX IF EXISTS ix_product_cost_version_base_unique"))
+        conn.commit()
+
+
+def sanitize_text(value):
+    if value is None:
+        return ""
+    value = str(value)
+    value = re.sub(r'<[^>]*>', '', value)
+    value = value.strip()
+    return value
+
+
+def generate_csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = str(uuid.uuid4())
+    return session["csrf_token"]
+
+
+def validate_csrf_token(form_token):
+    session_token = session.get("csrf_token")
+    if not session_token or not form_token:
+        return False
+    if session_token != form_token:
+        return False
+    return True
+
+
+def validate_username(username):
+    if not username or len(username) < 3 or len(username) > 30:
+        return False
+    if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+        return False
+    return True
+
+
+def validate_password(password):
+    if not password or len(password) < 6 or len(password) > 128:
+        return False
+    return True
 
 PREVIEW_DIR = os.path.join(tempfile.gettempdir(), "cost_app_previews")
 os.makedirs(PREVIEW_DIR, exist_ok=True)
@@ -126,180 +170,123 @@ def delete_preview_from_disk(token):
 
 def clear_session_preview():
     session.pop("preview_token", None)
-    session.pop("preview_is_base", None)
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user_id" not in session:
+            flash("Please log in to access this page.", "error")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    csrf_token = generate_csrf_token()
+    if request.method == "POST":
+        form_token = request.form.get("csrf_token", "")
+        if not validate_csrf_token(form_token):
+            flash("Invalid request. Please try again.", "error")
+            return redirect(url_for("register"))
+
+        username = sanitize_text(request.form.get("username", ""))
+        password = request.form.get("password", "")
+
+        if not validate_username(username):
+            flash("Username must be 3-30 characters and contain only letters, numbers, hyphens, or underscores.", "error")
+            return redirect(url_for("register"))
+
+        if not validate_password(password):
+            flash("Password must be 6-128 characters.", "error")
+            return redirect(url_for("register"))
+
+        db = SessionLocal()
+        try:
+            existing = db.query(User).filter_by(username=username).first()
+            if existing:
+                flash("Username already exists.", "error")
+                return redirect(url_for("register"))
+
+            user = User(
+                username=username,
+                password_hash=generate_password_hash(password),
+            )
+            db.add(user)
+            db.commit()
+            session.pop("csrf_token", None)
+            flash("Registration successful. Please log in.", "success")
+            return redirect(url_for("login"))
+        finally:
+            db.close()
+
+    return render_template("register.html", csrf_token=csrf_token)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    csrf_token = generate_csrf_token()
+    if request.method == "POST":
+        form_token = request.form.get("csrf_token", "")
+        if not validate_csrf_token(form_token):
+            flash("Invalid request. Please try again.", "error")
+            return redirect(url_for("login"))
+
+        username = sanitize_text(request.form.get("username", ""))
+        password = request.form.get("password", "")
+
+        if not validate_username(username):
+            flash("Invalid username format.", "error")
+            return redirect(url_for("login"))
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter_by(username=username).first()
+            if not user or not check_password_hash(user.password_hash, password):
+                flash("Invalid username or password.", "error")
+                return redirect(url_for("login"))
+
+            session["user_id"] = user.id
+            session["username"] = user.username
+            session.pop("csrf_token", None)
+            flash(f"Welcome, {user.username}!", "success")
+            return redirect(url_for("dashboard"))
+        finally:
+            db.close()
+
+    return render_template("login.html", csrf_token=csrf_token)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("user_id", None)
+    session.pop("username", None)
+    flash("You have been logged out.", "success")
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/")
 def dashboard():
     db = SessionLocal()
     try:
-        base = db.query(ProductCostVersion).filter_by(is_base=1).first()
         total_versions = db.query(ProductCostVersion).count()
         latest = db.query(ProductCostVersion).order_by(ProductCostVersion.created_at.desc()).first()
         latest_count = 0
         if latest:
             latest_count = db.query(ProductCost).filter_by(version_id=latest.id).count()
         return render_template("dashboard.html",
-                               base_exists=base is not None,
-                               base_name=base.name if base else None,
                                total_versions=total_versions,
                                latest_version=latest,
-                               latest_product_count=latest_count)
-    finally:
-        db.close()
-
-
-@app.route("/upload-base", methods=["GET", "POST"])
-def upload_base():
-    db = SessionLocal()
-    try:
-        existing_base = db.query(ProductCostVersion).filter_by(is_base=1).first()
-        if existing_base and request.method == "GET":
-            return render_template("upload_base.html", existing_base=existing_base)
-
-        if request.method == "POST":
-            if existing_base:
-                flash("A Base Price already exists. Delete it first before creating a new one.", "error")
-                return redirect(url_for("upload_base"))
-
-            version_name = request.form.get("version_name", "").strip()
-            version_date = request.form.get("version_date", "").strip()
-
-            if not version_name or not version_date:
-                flash("Version Name and Version Date are required.", "error")
-                return redirect(url_for("upload_base"))
-
-            try:
-                validate_version_date(version_date)
-            except ValueError as e:
-                flash(str(e), "error")
-                return redirect(url_for("upload_base"))
-
-            if "file" not in request.files:
-                flash("No file uploaded.", "error")
-                return redirect(url_for("upload_base"))
-
-            file = request.files["file"]
-            if file.filename == "":
-                flash("No file selected.", "error")
-                return redirect(url_for("upload_base"))
-
-            if not allowed_file(file.filename):
-                flash("Only .xlsx files are allowed.", "error")
-                return redirect(url_for("upload_base"))
-
-            try:
-                records = parse_excel(file)
-            except Exception as e:
-                flash(f"Invalid Excel file: {str(e)}", "error")
-                return redirect(url_for("upload_base"))
-
-            if not records:
-                flash("No valid product records found in the Excel file.", "error")
-                return redirect(url_for("upload_base"))
-
-            preview = {}
-            for rec in records:
-                key = (rec["product_name"], rec["location"])
-                preview[key] = rec
-
-            preview_records = [v for v in preview.values()]
-            token = save_preview_to_disk(preview_records, {
-                "version_name": version_name,
-                "version_date": version_date,
-                "is_base": True,
-            })
-            session["preview_token"] = token
-            session["preview_is_base"] = True
-
-            return render_template("upload_base.html",
-                                   preview=True,
-                                   version_name=version_name,
-                                   version_date=version_date,
-                                   preview_records=preview_records)
-
-        return render_template("upload_base.html", existing_base=existing_base, preview=False)
-    finally:
-        db.close()
-
-
-@app.route("/save-base", methods=["POST"])
-def save_base():
-    db = SessionLocal()
-    try:
-        token = session.get("preview_token")
-        if not token:
-            flash("No preview data found. Please upload a file first.", "error")
-            return redirect(url_for("upload_base"))
-
-        preview_data = load_preview_from_disk(token)
-        if not preview_data:
-            flash("Preview data expired or missing. Please upload again.", "error")
-            clear_session_preview()
-            return redirect(url_for("upload_base"))
-
-        metadata = preview_data["metadata"]
-        records = preview_data["records"]
-
-        if not metadata.get("is_base"):
-            flash("Invalid preview session.", "error")
-            clear_session_preview()
-            delete_preview_from_disk(token)
-            return redirect(url_for("upload_base"))
-
-        existing_base = db.query(ProductCostVersion).filter_by(is_base=1).first()
-        if existing_base:
-            flash("A Base Price already exists.", "error")
-            clear_session_preview()
-            delete_preview_from_disk(token)
-            return redirect(url_for("upload_base"))
-
-        version_name = metadata["version_name"]
-        version_date = metadata["version_date"]
-
-        duplicate = db.query(ProductCostVersion).filter_by(name=version_name).first()
-        if duplicate:
-            flash(f"Version name '{version_name}' already exists.", "error")
-            clear_session_preview()
-            delete_preview_from_disk(token)
-            return redirect(url_for("upload_base"))
-
-        version = ProductCostVersion(
-            name=version_name,
-            version_date=version_date,
-            is_base=1,
-        )
-        db.add(version)
-        db.flush()
-
-        db.bulk_insert_mappings(ProductCost, [
-            {
-                "version_id": version.id,
-                "product_name": rec["product_name"],
-                "product_category": rec["product_category"],
-                "unit": rec["unit"],
-                "location": rec["location"],
-                "cost": rec["cost"],
-            }
-            for rec in records
-        ])
-
-        db.commit()
-
-        clear_session_preview()
-        delete_preview_from_disk(token)
-
-        flash("Base Price saved successfully.", "success")
-        return redirect(url_for("versions"))
-    except Exception as e:
-        db.rollback()
-        flash(f"Failed to save Base Price: {str(e)}", "error")
-        return redirect(url_for("upload_base"))
+                               latest_product_count=latest_count,
+                               logged_in=bool(session.get("user_id")),
+                               username=session.get("username"))
     finally:
         db.close()
 
 
 @app.route("/upload-version", methods=["GET", "POST"])
+@login_required
 def upload_version():
     if request.method == "POST":
         version_name = request.form.get("version_name", "").strip()
@@ -341,10 +328,8 @@ def upload_version():
         token = save_preview_to_disk(records, {
             "version_name": version_name,
             "version_date": version_date,
-            "is_base": False,
         })
         session["preview_token"] = token
-        session["preview_is_base"] = False
 
         return render_template("upload_version.html",
                                preview=True,
@@ -356,6 +341,7 @@ def upload_version():
 
 
 @app.route("/save-version", methods=["POST"])
+@login_required
 def save_version():
     db = SessionLocal()
     try:
@@ -373,12 +359,6 @@ def save_version():
         metadata = preview_data["metadata"]
         records = preview_data["records"]
 
-        if metadata.get("is_base"):
-            flash("Invalid preview session.", "error")
-            clear_session_preview()
-            delete_preview_from_disk(token)
-            return redirect(url_for("upload_version"))
-
         version_name = metadata["version_name"]
         version_date = metadata["version_date"]
 
@@ -392,7 +372,6 @@ def save_version():
         version = ProductCostVersion(
             name=version_name,
             version_date=version_date,
-            is_base=0,
         )
         db.add(version)
         db.flush()
@@ -444,12 +423,27 @@ def versions():
             result.append({
                 "id": v.id,
                 "name": v.name,
+                "display_name": v.name,
                 "version_date": v.version_date,
-                "is_base": bool(v.is_base),
                 "product_count": product_count,
                 "created_at": v.created_at,
             })
         return render_template("versions.html", versions=result)
+    finally:
+        db.close()
+
+
+@app.route("/version/<int:version_id>/data")
+def version_data(version_id):
+    db = SessionLocal()
+    try:
+        version = db.query(ProductCostVersion).filter_by(id=version_id).first()
+        if not version:
+            abort(404)
+        return render_template("version_data.html",
+                               version_id=version_id,
+                               version_name=version.name,
+                               version_date=version.version_date)
     finally:
         db.close()
 
@@ -476,52 +470,15 @@ def version_matrix(version_id):
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
             abort(404)
-
-        costs = db.query(ProductCost).filter_by(version_id=version_id).all()
-
-        products = {}
-        for c in costs:
-            key = normalize_text(c.product_name)
-            if key not in products:
-                products[key] = {
-                    "product_name": c.product_name,
-                    "product_category": c.product_category,
-                    "unit": c.unit,
-                    "costs": {},
-                }
-            products[key]["costs"][c.location] = c.cost
-
-        matrix_rows = []
-        for prod in products.values():
-            vals = [v for v in prod["costs"].values() if v is not None]
-            avg = sum(vals) / len(vals) if vals else None
-
-            deviations = {}
-            for loc in LOCATIONS:
-                cost = prod["costs"].get(loc)
-                if cost is not None and avg is not None:
-                    deviations[loc] = cost - avg
-                else:
-                    deviations[loc] = None
-
-            matrix_rows.append({
-                "product_name": prod["product_name"],
-                "product_category": prod["product_category"],
-                "unit": prod["unit"],
-                "costs": prod["costs"],
-                "average": avg,
-                "deviations": deviations,
-            })
-
         return render_template("matrix.html",
-                               version=version,
-                               locations=LOCATIONS,
-                               matrix_rows=matrix_rows)
+                               version_id=version_id,
+                               version_name=version.name,
+                               version_date=version.version_date)
     finally:
         db.close()
 
 
-def build_comparison_rows(current_id, compare_id=None, compare_base=False, search="", category_filter="", location_filter="", summary_filter=""):
+def build_comparison_rows(current_id, compare_id=None, search="", category_filter="", location_filter="", summary_filter=""):
     db = SessionLocal()
     try:
         current_version = db.query(ProductCostVersion).filter_by(id=current_id).first()
@@ -531,11 +488,7 @@ def build_comparison_rows(current_id, compare_id=None, compare_base=False, searc
         compare_version = None
         if compare_id:
             compare_version = db.query(ProductCostVersion).filter_by(id=compare_id).first()
-        elif compare_base:
-            compare_version = db.query(ProductCostVersion).filter_by(is_base=1).first()
 
-        if compare_base and not compare_version:
-            return None, None
         if compare_id and not compare_version:
             return None, None
 
@@ -598,9 +551,9 @@ def build_comparison_rows(current_id, compare_id=None, compare_base=False, searc
                 category = c_rec["product_category"] if c_rec else (p_rec["product_category"] if p_rec else None)
                 unit = c_rec["unit"] if c_rec else (p_rec["unit"] if p_rec else None)
 
-                if search and search not in normalize_text(product_name):
+                if search and search not in normalize_text(product_name) and search not in normalize_text(category):
                     continue
-                if category_filter and normalize_text(category) != category_filter:
+                if category_filter and category_filter not in normalize_text(category):
                     continue
                 if location_filter and loc != location_filter:
                     continue
@@ -654,7 +607,6 @@ def build_comparison_rows(current_id, compare_id=None, compare_base=False, searc
 def api_compare():
     current_id = request.args.get("current_id", type=int)
     compare_id = request.args.get("compare_id", type=int)
-    compare_base = request.args.get("compare_base")
     search = request.args.get("search", "").strip().lower()
     category_filter = request.args.get("category", "").strip().lower()
     location_filter = request.args.get("location", "").strip().upper()
@@ -663,7 +615,7 @@ def api_compare():
     if not current_id:
         return jsonify({"error": "current_id is required"}), 400
 
-    rows, summary = build_comparison_rows(current_id, compare_id, compare_base, search, category_filter, location_filter, summary_filter)
+    rows, summary = build_comparison_rows(current_id, compare_id, search, category_filter, location_filter, summary_filter)
     if rows is None:
         return jsonify({"error": "Version not found"}), 404
 
@@ -674,7 +626,6 @@ def api_compare():
 def api_export():
     current_id = request.args.get("current_id", type=int)
     compare_id = request.args.get("compare_id", type=int)
-    compare_base = request.args.get("compare_base")
     search = request.args.get("search", "").strip().lower()
     category_filter = request.args.get("category", "").strip().lower()
     location_filter = request.args.get("location", "").strip().upper()
@@ -683,7 +634,7 @@ def api_export():
     if not current_id:
         return jsonify({"error": "current_id is required"}), 400
 
-    rows, summary = build_comparison_rows(current_id, compare_id, compare_base, search, category_filter, location_filter, summary_filter)
+    rows, summary = build_comparison_rows(current_id, compare_id, search, category_filter, location_filter, summary_filter)
     if rows is None:
         return jsonify({"error": "Version not found"}), 404
 
@@ -693,13 +644,11 @@ def api_export():
         compare_version = None
         if compare_id:
             compare_version = db2.query(ProductCostVersion).filter_by(id=compare_id).first()
-        elif compare_base:
-            compare_version = db2.query(ProductCostVersion).filter_by(is_base=1).first()
     finally:
         db2.close()
 
     current_name = current_version.name if current_version else "current"
-    compare_name = compare_version.name if compare_version else "base"
+    compare_name = compare_version.name if compare_version else "compare"
     filename = f"comparison_{current_name}_vs_{compare_name}.csv".replace(" ", "_").replace("/", "_")
 
     csv_lines = ["Product Name,Product Category,Unit,Location,Current Cost,Compared Cost,Diff,Diff %"]
@@ -725,25 +674,125 @@ def api_export():
     return Response("\n".join(csv_lines), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
-@app.route("/version/<int:version_id>/delete", methods=["POST"])
-def delete_version(version_id):
+@app.route("/api/version-data")
+def api_version_data():
+    version_id = request.args.get("version_id", type=int)
+    search = request.args.get("search", "").strip().lower()
+    category_filter = request.args.get("category", "").strip().lower()
+    location_filter = request.args.get("location", "").strip().upper()
+
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+
     db = SessionLocal()
     try:
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
-            abort(404)
-        if version.is_base:
-            flash("Base Price cannot be deleted.", "error")
-            return redirect(url_for("versions"))
+            return jsonify({"error": "Version not found"}), 404
 
-        db.delete(version)
-        db.commit()
-        flash("Version deleted successfully.", "success")
-        return redirect(url_for("versions"))
-    except Exception as e:
-        db.rollback()
-        flash(f"Failed to delete version: {str(e)}", "error")
-        return redirect(url_for("versions"))
+        costs = db.query(ProductCost).filter_by(version_id=version_id).all()
+
+        rows = []
+        categories = set()
+        locations = set()
+
+        for c in costs:
+            categories.add(c.product_category or "")
+            locations.add(c.location)
+
+            if search and search not in normalize_text(c.product_name) and search not in normalize_text(c.product_category):
+                continue
+            if category_filter and category_filter not in normalize_text(c.product_category):
+                continue
+            if location_filter and c.location != location_filter:
+                continue
+
+            rows.append({
+                "product_name": c.product_name,
+                "product_category": c.product_category,
+                "unit": c.unit,
+                "location": c.location,
+                "cost": c.cost,
+            })
+
+        return jsonify({
+            "rows": rows,
+            "version_name": version.name,
+            "version_date": version.version_date,
+            "categories": sorted(categories),
+            "locations": sorted(locations),
+        })
+    finally:
+        db.close()
+
+
+@app.route("/api/matrix")
+def api_matrix():
+    version_id = request.args.get("version_id", type=int)
+    search = request.args.get("search", "").strip().lower()
+    category_filter = request.args.get("category", "").strip().lower()
+
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+
+    db = SessionLocal()
+    try:
+        version = db.query(ProductCostVersion).filter_by(id=version_id).first()
+        if not version:
+            return jsonify({"error": "Version not found"}), 404
+
+        costs = db.query(ProductCost).filter_by(version_id=version_id).all()
+
+        products = {}
+        categories = set()
+
+        for c in costs:
+            key = normalize_text(c.product_name)
+            categories.add(c.product_category or "")
+
+            if key not in products:
+                products[key] = {
+                    "product_name": c.product_name,
+                    "product_category": c.product_category,
+                    "unit": c.unit,
+                    "costs": {},
+                }
+            products[key]["costs"][c.location] = c.cost
+
+        matrix_rows = []
+        for prod in products.values():
+            vals = [v for v in prod["costs"].values() if v is not None]
+            avg = sum(vals) / len(vals) if vals else None
+
+            if search and search not in normalize_text(prod["product_name"]) and search not in normalize_text(prod["product_category"]):
+                continue
+            if category_filter and category_filter not in normalize_text(prod["product_category"]):
+                continue
+
+            deviations = {}
+            for loc in LOCATIONS:
+                cost = prod["costs"].get(loc)
+                if cost is not None and avg is not None:
+                    deviations[loc] = cost - avg
+                else:
+                    deviations[loc] = None
+
+            matrix_rows.append({
+                "product_name": prod["product_name"],
+                "product_category": prod["product_category"],
+                "unit": prod["unit"],
+                "costs": prod["costs"],
+                "average": avg,
+                "deviations": deviations,
+            })
+
+        return jsonify({
+            "matrix_rows": matrix_rows,
+            "version_name": version.name,
+            "version_date": version.version_date,
+            "locations": LOCATIONS,
+            "categories": sorted(categories),
+        })
     finally:
         db.close()
 

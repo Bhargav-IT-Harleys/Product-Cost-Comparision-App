@@ -1,15 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}{{ version_name }} - Location-wise Cost Deviation{% endblock %}
+{% block title %}{{ version_name }} - View Data{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>{{ version_name }} - Location-wise Cost Deviation</h1>
+    <h1>{{ version_name }} - Uploaded Data</h1>
     <p class="subtitle">{{ version_date }}</p>
-</div>
-
-<div class="alert alert-info" style="margin-bottom: 1rem;">
-    AVG DIFF shown as difference from the product's average cost across locations within this version.
 </div>
 
 <div class="filters" style="margin-bottom: 1rem;">
@@ -17,20 +13,25 @@
     <select id="category-filter">
         <option value="">All Categories</option>
     </select>
+    <select id="location-filter">
+        <option value="">All Locations</option>
+        <option value="HYD">HYD</option>
+        <option value="BLR">BLR</option>
+        <option value="MUM">MUM</option>
+        <option value="PUNE">PUNE</option>
+        <option value="NCR">NCR</option>
+    </select>
 </div>
 
-<div class="table-responsive matrix-view">
+<div class="table-responsive">
     <table class="data-table">
         <thead>
             <tr>
                 <th>Product Name</th>
                 <th class="col-category">Category</th>
                 <th class="col-unit">Unit</th>
-                <th>Average</th>
-                {% for loc in ['HYD', 'BLR', 'MUM', 'PUNE', 'NCR'] %}
-                <th>{{ loc }}</th>
-                <th>{{ loc }} AVG DIFF</th>
-                {% endfor %}
+                <th>Location</th>
+                <th>Cost</th>
             </tr>
         </thead>
         <tbody id="results-body"></tbody>
@@ -39,14 +40,12 @@
 
 <div class="action-buttons" style="margin-top: 1.5rem;">
     <a href="{{ url_for('versions') }}" class="btn btn-secondary">Back to Versions</a>
-    <a href="{{ url_for('version_detail', version_id=version_id) }}" class="btn btn-primary">Compare</a>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     window.versionId = {{ version_id }};
-    window.locations = {{ ['HYD', 'BLR', 'MUM', 'PUNE', 'NCR'] | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/matrix.js') }}"></script>
+<script src="{{ url_for('static', filename='js/version_data.js') }}"></script>
 {% endblock %}

@@ -4,7 +4,6 @@ A simple, fast Flask web application for managing and comparing product cost ver
 
 ## Features
 
-- Upload Base Price Excel files
 - Upload new Product Cost versions
 - Compare versions product-wise and location-wise
 - Search and filter comparison results

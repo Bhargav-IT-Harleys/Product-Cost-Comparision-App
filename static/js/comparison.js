@@ -77,8 +77,8 @@
         const cat = categoryFilter.value.toLowerCase().trim();
         const loc = locationFilter.value.trim().toUpperCase();
         let filtered = allRows.filter(r => {
-            if (search && !r.product_name.toLowerCase().includes(search)) return false;
-            if (cat && (r.product_category || "").toLowerCase() !== cat) return false;
+            if (search && !r.product_name.toLowerCase().includes(search) && !(r.product_category || "").toLowerCase().includes(search)) return false;
+            if (cat && !(r.product_category || "").toLowerCase().includes(cat)) return false;
             if (loc && r.location !== loc) return false;
             if (!matchesSummaryFilter(r)) return false;
             return true;
@@ -175,9 +175,7 @@
         }
 
         let url = `/api/compare?current_id=${currentId}`;
-        if (compareId === "base") {
-            url += "&compare_base=1";
-        } else {
+        if (compareId) {
             url += `&compare_id=${compareId}`;
         }
 
@@ -196,6 +194,7 @@
             populateCategories(allRows);
             updateSummary(data.summary || {});
             refreshView();
+            renderTop20();
             resultsContainer.style.display = "block";
             summaryCards.style.display = "grid";
             filtersDiv.style.display = "flex";
@@ -211,9 +210,7 @@
 
         const params = new URLSearchParams();
         params.set("current_id", currentId);
-        if (compareId === "base") {
-            params.set("compare_base", "1");
-        } else {
+        if (compareId) {
             params.set("compare_id", compareId);
         }
         const search = searchInput.value.trim();
@@ -263,6 +260,61 @@
             refreshView();
         });
     });
+
+    const top20Section = document.getElementById("top20-section");
+    const top20Body = document.getElementById("top20-body");
+    const toggleTop20Btn = document.getElementById("toggle-top20");
+
+    function renderTop20() {
+        if (!top20Body || !top20Section) return;
+        const rowsWithDiff = allRows.filter(r => r.diff !== null && r.diff !== undefined);
+        rowsWithDiff.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        const topRows = rowsWithDiff.slice(0, 20);
+
+        top20Body.innerHTML = "";
+        if (!topRows.length) {
+            top20Body.innerHTML = "<tr><td colspan='8' class='text-center'>No data available.</td></tr>";
+            return;
+        }
+        topRows.forEach(function (r) {
+            const tr = document.createElement("tr");
+            let diffClass = "diff-neutral";
+            let diffText = "-";
+            let pctText = "-";
+            if (r.diff !== null && r.diff !== undefined) {
+                diffText = (r.diff > 0 ? "+" : "") + Number(r.diff).toFixed(2);
+                diffClass = r.diff > 0 ? "diff-positive" : (r.diff < 0 ? "diff-negative" : "diff-neutral");
+            }
+            if (r.diff_pct !== null && r.diff_pct !== undefined) {
+                pctText = (r.diff_pct > 0 ? "+" : "") + Number(r.diff_pct).toFixed(2) + "%";
+            }
+            tr.innerHTML = `
+                <td>${escapeHtml(r.location)}</td>
+                <td>${escapeHtml(r.product_category || "-")}</td>
+                <td>${escapeHtml(r.product_name)}</td>
+                <td>${escapeHtml(r.unit || "-")}</td>
+                <td>${r.current_cost !== null && r.current_cost !== undefined ? Number(r.current_cost).toFixed(2) : "-"}</td>
+                <td>${r.compared_cost !== null && r.compared_cost !== undefined ? Number(r.compared_cost).toFixed(2) : "-"}</td>
+                <td class="${diffClass}">${diffText}</td>
+                <td class="${diffClass}">${pctText}</td>
+            `;
+            top20Body.appendChild(tr);
+        });
+        top20Section.style.display = "block";
+        if (toggleTop20Btn) toggleTop20Btn.textContent = "Hide";
+    }
+
+    if (toggleTop20Btn) {
+        toggleTop20Btn.addEventListener("click", () => {
+            if (top20Section.style.display === "none") {
+                top20Section.style.display = "block";
+                toggleTop20Btn.textContent = "Hide";
+            } else {
+                top20Section.style.display = "none";
+                toggleTop20Btn.textContent = "Show";
+            }
+        });
+    }
 
     searchInput.addEventListener("input", refreshView);
     categoryFilter.addEventListener("change", refreshView);

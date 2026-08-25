@@ -4,7 +4,6 @@
     const resultsBody = document.getElementById("results-body");
     const resultsContainer = document.getElementById("results-container");
     const summaryCards = document.getElementById("summary-cards");
-    const filtersDiv = document.getElementById("filters");
     const searchInput = document.getElementById("search-input");
     const categoryFilter = document.getElementById("category-filter");
     const locationFilter = document.getElementById("location-filter");
@@ -119,11 +118,18 @@
         });
     }
 
+    function getParentCategory(category) {
+        if (!category) return "Other";
+        const parts = category.split("/").map(s => s.trim()).filter(Boolean);
+        return parts[0] || "Other";
+    }
+
     function refreshView() {
         const rows = getDisplayRows();
         renderTable(rows);
         updateSortIndicators();
         updateSummaryCardActiveState();
+        renderTop20();
     }
 
     function updateSummaryCardActiveState() {
@@ -167,7 +173,6 @@
         if (!compareId) {
             resultsContainer.style.display = "none";
             summaryCards.style.display = "none";
-            filtersDiv.style.display = "none";
             allRows = [];
             summaryFilter = null;
             document.getElementById("summary-hint").style.display = "none";
@@ -197,7 +202,6 @@
             renderTop20();
             resultsContainer.style.display = "block";
             summaryCards.style.display = "grid";
-            filtersDiv.style.display = "flex";
             document.getElementById("summary-hint").style.display = "block";
         } catch (e) {
             alert("Error loading comparison: " + e.message);
@@ -262,44 +266,80 @@
     });
 
     const top20Section = document.getElementById("top20-section");
-    const top20Body = document.getElementById("top20-body");
+    const top20Groups = document.getElementById("top20-groups");
     const toggleTop20Btn = document.getElementById("toggle-top20");
 
     function renderTop20() {
-        if (!top20Body || !top20Section) return;
-        const rowsWithDiff = allRows.filter(r => r.diff !== null && r.diff !== undefined);
-        rowsWithDiff.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-        const topRows = rowsWithDiff.slice(0, 20);
-
-        top20Body.innerHTML = "";
-        if (!topRows.length) {
-            top20Body.innerHTML = "<tr><td colspan='8' class='text-center'>No data available.</td></tr>";
+        if (!top20Groups || !top20Section) return;
+        const filtered = getDisplayRows().filter(r => r.diff !== null && r.diff !== undefined);
+        if (!filtered.length) {
+            top20Groups.innerHTML = "<p class='text-center'>No data available.</p>";
+            top20Section.style.display = "block";
+            if (toggleTop20Btn) toggleTop20Btn.textContent = "Hide";
             return;
         }
-        topRows.forEach(function (r) {
-            const tr = document.createElement("tr");
-            let diffClass = "diff-neutral";
-            let diffText = "-";
-            let pctText = "-";
-            if (r.diff !== null && r.diff !== undefined) {
-                diffText = (r.diff > 0 ? "+" : "") + Number(r.diff).toFixed(2);
-                diffClass = r.diff > 0 ? "diff-positive" : (r.diff < 0 ? "diff-negative" : "diff-neutral");
+
+        const groups = {};
+        filtered.forEach(r => {
+            const parentCat = getParentCategory(r.product_category);
+            const key = parentCat + "|||" + r.location;
+            if (!groups[key]) {
+                groups[key] = { parentCategory: parentCat, location: r.location, rows: [] };
             }
-            if (r.diff_pct !== null && r.diff_pct !== undefined) {
-                pctText = (r.diff_pct > 0 ? "+" : "") + Number(r.diff_pct).toFixed(2) + "%";
-            }
-            tr.innerHTML = `
-                <td>${escapeHtml(r.location)}</td>
-                <td>${escapeHtml(r.product_category || "-")}</td>
-                <td>${escapeHtml(r.product_name)}</td>
-                <td>${escapeHtml(r.unit || "-")}</td>
-                <td>${r.current_cost !== null && r.current_cost !== undefined ? Number(r.current_cost).toFixed(2) : "-"}</td>
-                <td>${r.compared_cost !== null && r.compared_cost !== undefined ? Number(r.compared_cost).toFixed(2) : "-"}</td>
-                <td class="${diffClass}">${diffText}</td>
-                <td class="${diffClass}">${pctText}</td>
-            `;
-            top20Body.appendChild(tr);
+            groups[key].rows.push(r);
         });
+
+        const groupKeys = Object.keys(groups).sort();
+        let html = "";
+        groupKeys.forEach(key => {
+            const group = groups[key];
+            group.rows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+            const topRows = group.rows.slice(0, 20);
+
+            html += `<div style="margin-bottom: 1.5rem;">
+                <h3 style="margin-bottom: 0.5rem; font-size: 1rem; color: #555;">${escapeHtml(group.parentCategory)} — ${escapeHtml(group.location)}</h3>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Product Name</th>
+                                <th>Unit</th>
+                                <th>Current Cost</th>
+                                <th>Compared Cost</th>
+                                <th>Diff</th>
+                                <th>Diff %</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+            topRows.forEach(r => {
+                let diffClass = "diff-neutral";
+                let diffText = "-";
+                let pctText = "-";
+                if (r.diff !== null && r.diff !== undefined) {
+                    diffText = (r.diff > 0 ? "+" : "") + Number(r.diff).toFixed(2);
+                    diffClass = r.diff > 0 ? "diff-positive" : (r.diff < 0 ? "diff-negative" : "diff-neutral");
+                }
+                if (r.diff_pct !== null && r.diff_pct !== undefined) {
+                    pctText = (r.diff_pct > 0 ? "+" : "") + Number(r.diff_pct).toFixed(2) + "%";
+                }
+                html += `<tr>
+                    <td>${escapeHtml(r.product_category || "-")}</td>
+                    <td>${escapeHtml(r.product_name)}</td>
+                    <td>${escapeHtml(r.unit || "-")}</td>
+                    <td>${r.current_cost !== null && r.current_cost !== undefined ? Number(r.current_cost).toFixed(2) : "-"}</td>
+                    <td>${r.compared_cost !== null && r.compared_cost !== undefined ? Number(r.compared_cost).toFixed(2) : "-"}</td>
+                    <td class="${diffClass}">${diffText}</td>
+                    <td class="${diffClass}">${pctText}</td>
+                </tr>`;
+            });
+            html += `</tbody>
+                    </table>
+                </div>
+            </div>`;
+        });
+
+        top20Groups.innerHTML = html;
         top20Section.style.display = "block";
         if (toggleTop20Btn) toggleTop20Btn.textContent = "Hide";
     }

@@ -726,20 +726,12 @@ def api_version_data():
         db.close()
 
 
-@app.route("/api/matrix")
-def api_matrix():
-    version_id = request.args.get("version_id", type=int)
-    search = request.args.get("search", "").strip().lower()
-    category_filter = request.args.get("category", "").strip().lower()
-
-    if not version_id:
-        return jsonify({"error": "version_id is required"}), 400
-
+def build_matrix_rows(version_id, search="", category_filter=""):
     db = SessionLocal()
     try:
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
-            return jsonify({"error": "Version not found"}), 404
+            return None, None, None, None
 
         costs = db.query(ProductCost).filter_by(version_id=version_id).all()
 
@@ -763,19 +755,16 @@ def api_matrix():
         for prod in products.values():
             vals = [v for v in prod["costs"].values() if v is not None]
             avg = sum(vals) / len(vals) if vals else None
+            n = len(vals)
+            std_dev = None
+            if avg is not None and n > 0:
+                variance = sum((x - avg) ** 2 for x in vals) / n
+                std_dev = variance ** 0.5
 
             if search and search not in normalize_text(prod["product_name"]) and search not in normalize_text(prod["product_category"]):
                 continue
             if category_filter and category_filter not in normalize_text(prod["product_category"]):
                 continue
-
-            deviations = {}
-            for loc in LOCATIONS:
-                cost = prod["costs"].get(loc)
-                if cost is not None and avg is not None:
-                    deviations[loc] = cost - avg
-                else:
-                    deviations[loc] = None
 
             matrix_rows.append({
                 "product_name": prod["product_name"],
@@ -783,18 +772,76 @@ def api_matrix():
                 "unit": prod["unit"],
                 "costs": prod["costs"],
                 "average": avg,
-                "deviations": deviations,
+                "std_deviation": std_dev,
             })
 
-        return jsonify({
-            "matrix_rows": matrix_rows,
-            "version_name": version.name,
-            "version_date": version.version_date,
-            "locations": LOCATIONS,
-            "categories": sorted(categories),
-        })
+        return matrix_rows, version.name, version.version_date, sorted(categories)
     finally:
         db.close()
+
+
+@app.route("/api/matrix")
+def api_matrix():
+    version_id = request.args.get("version_id", type=int)
+    search = request.args.get("search", "").strip().lower()
+    category_filter = request.args.get("category", "").strip().lower()
+
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+
+    result = build_matrix_rows(version_id, search, category_filter)
+    if result[0] is None:
+        return jsonify({"error": "Version not found"}), 404
+
+    matrix_rows, version_name, version_date, categories = result
+    return jsonify({
+        "matrix_rows": matrix_rows,
+        "version_name": version_name,
+        "version_date": version_date,
+        "locations": LOCATIONS,
+        "categories": categories,
+    })
+
+
+@app.route("/api/export-matrix")
+def api_export_matrix():
+    version_id = request.args.get("version_id", type=int)
+    search = request.args.get("search", "").strip().lower()
+    category_filter = request.args.get("category", "").strip().lower()
+
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+
+    result = build_matrix_rows(version_id, search, category_filter)
+    if result[0] is None:
+        return jsonify({"error": "Version not found"}), 404
+
+    matrix_rows, version_name, _, _ = result
+    filename = f"deviation_{version_name}.csv".replace(" ", "_").replace("/", "_")
+
+    csv_lines = ["Product Name,Product Category,Unit,Average,STD Deviation,HYD,BLR,MUM,PUNE,NCR"]
+    for r in matrix_rows:
+        def fmt(val):
+            if val is None:
+                return ""
+            if isinstance(val, float):
+                return f"{val:.2f}"
+            return str(val)
+        csv_lines.append(",".join([
+            '"' + str(r["product_name"]).replace('"', '""') + '"',
+            '"' + (r["product_category"] or "").replace('"', '""') + '"',
+            '"' + (r["unit"] or "").replace('"', '""') + '"',
+            fmt(r["average"]),
+            fmt(r["std_deviation"]),
+            fmt(r["costs"].get("HYD")),
+            fmt(r["costs"].get("BLR")),
+            fmt(r["costs"].get("MUM")),
+            fmt(r["costs"].get("PUNE")),
+            fmt(r["costs"].get("NCR")),
+        ]))
+
+    from flask import Response
+    return Response("\n".join(csv_lines), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 if __name__ == "__main__":

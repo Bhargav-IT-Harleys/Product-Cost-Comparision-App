@@ -9,7 +9,7 @@
 </div>
 
 <div class="alert alert-info" style="margin-bottom: 1rem;">
-    AVG DIFF shown as difference from the product's average cost across locations within this version.
+    STD Deviation calculated across all location costs for each product.
 </div>
 
 <div class="filters" style="margin-bottom: 1rem;">
@@ -23,13 +23,13 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Product Name</th>
-                <th class="col-category">Category</th>
-                <th class="col-unit">Unit</th>
-                <th>Average</th>
+                <th class="sortable-th" data-sort="product_name">Product Name <span class="sort-indicator"></span></th>
+                <th class="sortable-th col-category" data-sort="product_category">Category <span class="sort-indicator"></span></th>
+                <th class="sortable-th col-unit" data-sort="unit">Unit <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="average">Average <span class="sort-indicator"></span></th>
+                <th class="sortable-th" data-sort="std_deviation">STD Deviation <span class="sort-indicator"></span></th>
                 {% for loc in ['HYD', 'BLR', 'MUM', 'PUNE', 'NCR'] %}
-                <th>{{ loc }}</th>
-                <th>{{ loc }} AVG DIFF</th>
+                <th class="sortable-th" data-sort="{{ loc }}">{{ loc }} <span class="sort-indicator"></span></th>
                 {% endfor %}
             </tr>
         </thead>
@@ -40,6 +40,7 @@
 <div class="action-buttons" style="margin-top: 1.5rem;">
     <a href="{{ url_for('versions') }}" class="btn btn-secondary">Back to Versions</a>
     <a href="{{ url_for('version_detail', version_id=version_id) }}" class="btn btn-primary">Compare</a>
+    <button type="button" id="download-report" class="btn btn-sm btn-secondary">Download Report</button>
 </div>
 {% endblock %}
 

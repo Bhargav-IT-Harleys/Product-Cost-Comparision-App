@@ -36,7 +36,7 @@
 </div>
 <p class="hint-text" id="summary-hint" style="display:none;">Click a summary card to filter the table. Click again to clear.</p>
 
-<div class="filters" style="display:none;" id="filters">
+<div class="filters" id="filters">
     <input type="text" id="search-input" placeholder="Search by product name...">
     <select id="category-filter">
         <option value="">All Categories</option>
@@ -75,23 +75,7 @@
         <h2>Top 20 Highest Differences</h2>
         <button type="button" id="toggle-top20" class="btn btn-sm btn-secondary">Hide</button>
     </div>
-    <div class="table-responsive">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>City</th>
-                    <th>Category</th>
-                    <th>Product Name</th>
-                    <th>Unit</th>
-                    <th>Current Cost</th>
-                    <th>Compared Cost</th>
-                    <th>Diff</th>
-                    <th>Diff %</th>
-                </tr>
-            </thead>
-            <tbody id="top20-body"></tbody>
-        </table>
-    </div>
+    <div id="top20-groups"></div>
 </div>
 {% endblock %}
 

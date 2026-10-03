@@ -67,8 +67,29 @@ def validate_password(password):
 PREVIEW_DIR = os.path.join(tempfile.gettempdir(), "cost_app_previews")
 os.makedirs(PREVIEW_DIR, exist_ok=True)
 
-REQUIRED_COLUMNS = ["Product Name", "Product Category", "Unit", "HYD", "BLR", "MUM", "PUNE", "NCR"]
-LOCATIONS = ["HYD", "BLR", "MUM", "PUNE", "NCR"]
+REQUIRED_COLUMNS = ["Product Name", "Product Category", "Unit"]
+DEFAULT_LOCATIONS = ["HYD", "BLR", "MUM", "PUNE", "NCR"]
+
+# Columns whose trailing word marks them as identifiers or notes rather than
+# location costs, e.g. "Internal Reference", "Reference No", "Item Code", "Remarks".
+NON_COST_COLUMN_TRAILING_WORDS = {
+    "reference", "references", "ref", "refs", "code", "codes", "sku",
+    "no", "nos", "number", "numbers", "id", "sno", "srno", "hsn", "gstin",
+    "remark", "remarks", "note", "notes", "comment", "comments", "description",
+}
+
+
+def normalize_column_name(name):
+    s = str(name).strip().lower()
+    s = re.sub(r"[\s_\-./]+", " ", s)
+    return s.strip()
+
+
+def is_non_cost_column(name):
+    normalized = normalize_column_name(name)
+    if not normalized:
+        return False
+    return normalized.rsplit(" ", 1)[-1] in NON_COST_COLUMN_TRAILING_WORDS
 
 
 def allowed_file(filename):
@@ -86,6 +107,13 @@ def safe_float(val):
         return f
     except (ValueError, TypeError):
         raise ValueError(f"Invalid numeric cost value: {val}")
+
+
+def get_version_locations(db, version_id):
+    """Return sorted list of distinct locations for a version, or DEFAULT_LOCATIONS if none."""
+    loc_rows = db.query(ProductCost.location).filter_by(version_id=version_id).distinct().all()
+    locations = sorted([r[0] for r in loc_rows]) if loc_rows else DEFAULT_LOCATIONS
+    return locations
 
 
 def normalize_text(val):
@@ -111,6 +139,12 @@ def parse_excel(file_stream):
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
+    # Dynamically discover location columns (any column not in REQUIRED_COLUMNS),
+    # skipping identifier/reference columns such as "Internal Reference"
+    location_cols = [c for c in df.columns if c not in REQUIRED_COLUMNS and not is_non_cost_column(c)]
+    if not location_cols:
+        raise ValueError("No location columns found. Expected at least one location column (e.g., HYD, BLR, etc.) beyond Product Name, Product Category, and Unit.")
+
     def is_blank(val):
         if val is None:
             return True
@@ -134,7 +168,7 @@ def parse_excel(file_stream):
         raw_unit = row.get("Unit", "")
         unit = None if is_blank(raw_unit) else str(raw_unit).strip()
 
-        for loc in LOCATIONS:
+        for loc in location_cols:
             cost = safe_float(row.get(loc))
             records.append({
                 "product_name": product_name,
@@ -146,9 +180,11 @@ def parse_excel(file_stream):
     return records
 
 
-def save_preview_to_disk(records, metadata):
+def save_preview_to_disk(records, metadata, locations):
     token = str(uuid.uuid4())
     path = os.path.join(PREVIEW_DIR, token + ".json")
+    metadata = dict(metadata)
+    metadata["locations"] = locations
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"records": records, "metadata": metadata}, f)
     return token
@@ -325,17 +361,21 @@ def upload_version():
             flash("No valid product records found in the Excel file.", "error")
             return redirect(url_for("upload_version"))
 
+        # Discover unique locations from parsed records
+        locations = sorted(set(rec["location"] for rec in records))
+
         token = save_preview_to_disk(records, {
             "version_name": version_name,
             "version_date": version_date,
-        })
+        }, locations)
         session["preview_token"] = token
 
         return render_template("upload_version.html",
                                preview=True,
                                version_name=version_name,
                                version_date=version_date,
-                               preview_records=records)
+                               preview_records=records,
+                               preview_locations=locations)
 
     return render_template("upload_version.html", preview=False)
 
@@ -440,10 +480,12 @@ def version_data(version_id):
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
             abort(404)
+        locations = get_version_locations(db, version_id)
         return render_template("version_data.html",
                                version_id=version_id,
                                version_name=version.name,
-                               version_date=version.version_date)
+                               version_date=version.version_date,
+                               locations=locations)
     finally:
         db.close()
 
@@ -456,9 +498,11 @@ def version_detail(version_id):
         if not version:
             abort(404)
         other_versions = db.query(ProductCostVersion).filter(ProductCostVersion.id != version_id).order_by(ProductCostVersion.created_at.desc()).all()
+        locations = get_version_locations(db, version_id)
         return render_template("comparison.html",
                                current_version=version,
-                               other_versions=other_versions)
+                               other_versions=other_versions,
+                               locations=locations)
     finally:
         db.close()
 
@@ -470,10 +514,12 @@ def version_matrix(version_id):
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
             abort(404)
+        locations = get_version_locations(db, version_id)
         return render_template("matrix.html",
                                version_id=version_id,
                                version_name=version.name,
-                               version_date=version.version_date)
+                               version_date=version.version_date,
+                               locations=locations)
     finally:
         db.close()
 
@@ -731,16 +777,18 @@ def build_matrix_rows(version_id, search="", category_filter=""):
     try:
         version = db.query(ProductCostVersion).filter_by(id=version_id).first()
         if not version:
-            return None, None, None, None
+            return None, None, None, None, None
 
         costs = db.query(ProductCost).filter_by(version_id=version_id).all()
 
         products = {}
         categories = set()
+        locations = set()
 
         for c in costs:
             key = normalize_text(c.product_name)
             categories.add(c.product_category or "")
+            locations.add(c.location)
 
             if key not in products:
                 products[key] = {
@@ -775,7 +823,7 @@ def build_matrix_rows(version_id, search="", category_filter=""):
                 "std_deviation": std_dev,
             })
 
-        return matrix_rows, version.name, version.version_date, sorted(categories)
+        return matrix_rows, version.name, version.version_date, sorted(categories), sorted(locations)
     finally:
         db.close()
 
@@ -793,12 +841,12 @@ def api_matrix():
     if result[0] is None:
         return jsonify({"error": "Version not found"}), 404
 
-    matrix_rows, version_name, version_date, categories = result
+    matrix_rows, version_name, version_date, categories, locations = result
     return jsonify({
         "matrix_rows": matrix_rows,
         "version_name": version_name,
         "version_date": version_date,
-        "locations": LOCATIONS,
+        "locations": locations,
         "categories": categories,
     })
 
@@ -816,10 +864,11 @@ def api_export_matrix():
     if result[0] is None:
         return jsonify({"error": "Version not found"}), 404
 
-    matrix_rows, version_name, _, _ = result
+    matrix_rows, version_name, _, _, locations = result
     filename = f"deviation_{version_name}.csv".replace(" ", "_").replace("/", "_")
 
-    csv_lines = ["Product Name,Product Category,Unit,Average,STD Deviation,HYD,BLR,MUM,PUNE,NCR"]
+    header = "Product Name,Product Category,Unit,Average,STD Deviation," + ",".join(locations)
+    csv_lines = [header]
     for r in matrix_rows:
         def fmt(val):
             if val is None:
@@ -827,18 +876,16 @@ def api_export_matrix():
             if isinstance(val, float):
                 return f"{val:.2f}"
             return str(val)
-        csv_lines.append(",".join([
+        row = [
             '"' + str(r["product_name"]).replace('"', '""') + '"',
             '"' + (r["product_category"] or "").replace('"', '""') + '"',
             '"' + (r["unit"] or "").replace('"', '""') + '"',
             fmt(r["average"]),
             fmt(r["std_deviation"]),
-            fmt(r["costs"].get("HYD")),
-            fmt(r["costs"].get("BLR")),
-            fmt(r["costs"].get("MUM")),
-            fmt(r["costs"].get("PUNE")),
-            fmt(r["costs"].get("NCR")),
-        ]))
+        ]
+        for loc in locations:
+            row.append(fmt(r["costs"].get(loc)))
+        csv_lines.append(",".join(row))
 
     from flask import Response
     return Response("\n".join(csv_lines), mimetype="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})

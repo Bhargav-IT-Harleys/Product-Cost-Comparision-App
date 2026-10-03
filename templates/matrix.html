@@ -28,7 +28,7 @@
                 <th class="sortable-th col-unit" data-sort="unit">Unit <span class="sort-indicator"></span></th>
                 <th class="sortable-th" data-sort="average">Average <span class="sort-indicator"></span></th>
                 <th class="sortable-th" data-sort="std_deviation">STD Deviation <span class="sort-indicator"></span></th>
-                {% for loc in ['HYD', 'BLR', 'MUM', 'PUNE', 'NCR'] %}
+                {% for loc in locations %}
                 <th class="sortable-th" data-sort="{{ loc }}">{{ loc }} <span class="sort-indicator"></span></th>
                 {% endfor %}
             </tr>
@@ -47,7 +47,7 @@
 {% block scripts %}
 <script>
     window.versionId = {{ version_id }};
-    window.locations = {{ ['HYD', 'BLR', 'MUM', 'PUNE', 'NCR'] | tojson }};
+    window.locations = {{ locations | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/matrix.js') }}"></script>
 {% endblock %}

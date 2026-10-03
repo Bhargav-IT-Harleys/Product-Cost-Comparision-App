@@ -13,14 +13,12 @@
     <select id="category-filter">
         <option value="">All Categories</option>
     </select>
-    <select id="location-filter">
-        <option value="">All Locations</option>
-        <option value="HYD">HYD</option>
-        <option value="BLR">BLR</option>
-        <option value="MUM">MUM</option>
-        <option value="PUNE">PUNE</option>
-        <option value="NCR">NCR</option>
-    </select>
+<select id="location-filter">
+                    <option value="">All Locations</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc }}">{{ loc }}</option>
+                    {% endfor %}
+                </select>
 </div>
 
 <div class="table-responsive">
